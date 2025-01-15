@@ -16,8 +16,8 @@ USERNAME=pi
 export SESSION_KEY=`date +'%Y%m%d-%H%M%S'`
 
 
-# Redirect all script/program output into
-# a logfile for later inspection (and removal).
+# Redirect all script/program output into a logfile for later inspection
+# (and removal).
 progname=`basename $0 .sh`
 if ! tty -s; then
     LOG=$progname-"$SESSION_KEY".log
@@ -26,12 +26,11 @@ if ! tty -s; then
 fi
 
 
-# Keep all logfiles from today plus 6 older logs and
-# remove the others.  "Today" is difficult if the raspi
-# runs without network but you should have access to the
-# relevant log in case of an issue.  Even with network
-# date and time may be not correct because setting time
-# happens usually early after the system startup.
+# Keep all logfiles from today plus 6 older logs and remove the others.
+# "Today" is difficult if the raspi runs without network but you should
+# have access to the relevant log in case of an issue.  Even with
+# network date and time may be not correct because setting time happens
+# usually after the system startup.
 LIST=`ls -1r $progname-*.log |
 	awk '/./ {
 		split($0, x, "-");
@@ -60,15 +59,23 @@ fi
 ./activate-gadget
 
 
-# If the have a USB serial start a getty.
+# If we have a USB serial we start a getty.
 test -c /dev/ttyGS0  &&  systemctl start getty@ttyGS0.service
 
 
 # Network or MTP?
-if ip addr | awk '$0 ~ /^[0-9]+: usb0: / { f = 1 } END { exit (f == 1? 0: 1) }';
-then
+if ifconfig -a | awk '$1 == "usb0:" { f = 1 } END { exit (1 - f) }'; then
+
+	# This is a work-arounf for the case that some system
+	# process eats / clears our usb0 configuration.
+	ip=$(ifconfig usb0 2>&1 | awk '$1 == "inet" { print $2; exit }')
+	if [ "$ip" = "0.0.0.0" ]; then
+	    ifconfig usb0 169.254.233.90 netmask 255.255.0.0 up
+	    ifconfig usb0
+	fi
+
+	# This is an RNDIS / network device.  Provide a DHCP server.
 	touch udhcpd.leases
-	# This is an ethernet device.  Provide a DHCP server.
 	cat <<-EOF |
 		interface     usb0
 		start         169.254.1.20
@@ -131,6 +138,14 @@ else
 	# Start the server.
 	exec /usr/bin/umtprd -conf "$CONF"
 fi
+
+
+# There might be cases when usual networking services must be disabled
+# because they shutdown usb0 after it is configured here.  This may come
+# at the price of a blocked wlan interface, which why it is unblocked
+# here.
+rfkill unblock wlan
+
 
 exit 1
 

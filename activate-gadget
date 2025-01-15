@@ -6,9 +6,10 @@
 #
 
 set -x
+exec 2>&1
 
-
-# Terminate if USB is not empty.
+# Terminate if USB is not empty.  Detection does not work
+# early (`DefaultDependencies=No`) in the boot process.
 
 if [ "$(lsusb | wc -l)" -gt "1" ]; then
     echo "USB devices found: not activating gadget"
@@ -24,13 +25,13 @@ echo "activating USB gadget"
 #    test -f "$FN"  &&  MODE=$(cat $FN)  ||  MODE=mtp
 #fi
 
-MODE=mtp
+MODE=rndis
 case $MODE in
   serial)		MODE=serial;;
   mtp)			MODE=mtp;;
-  eth|ether)		MODE=eth; HAVE_SERIAL=n;;
-  rndis)		MODE=rndis; HAVE_SERIAL=n;;
-  *)			MODE=rndis;;
+  eth|ether)		MODE=eth; HAVE_SERIAL=y;;
+  rndis)		MODE=rndis; HAVE_SERIAL=y;;
+  *)			MODE=rndis; HAVE_SERIAL=y;;
 esac
 echo "gadget mode= $MODE"
 
@@ -135,7 +136,7 @@ activate_gadget() {
 
 	    HOST_ADDR="22:22:33:44:55:66"
 	    DEV_ADDR="22:bb:cc:dd:ee:f1"
-	    # Create an RNDIS device
+	    # Create an RNDIS device. This setup finally worked.
 	    # https://github.com/ev3dev/ev3-systemd/blob/ev3dev-jessie/scripts/ev3-usb.sh
 
 	    echo 0x02   > ${g}/bDeviceClass
@@ -147,7 +148,7 @@ activate_gadget() {
 	    echo "0xcd" > ${g}/os_desc/b_vendor_code
 	    echo "MSFT100" > ${g}/os_desc/qw_sign
 
-	    # Create the RNDIS function, including some Microsoft-specific
+	    # Create the RNDIS function, including the Microsoft-specific
 	    # bits.
 	    ms_subcompat_id="5162001"
 
@@ -230,7 +231,9 @@ modprobe libcomposite
 if activate_gadget; then
     # Configure some additional stuff.
     if [ "$HAVE_ETH" = "y" ]; then
+	sleep 1
 	ifconfig usb0 "$DEV_IP" netmask 255.255.0.0 up
+	ifconfig -a
     fi
 
     if [ "$HAVE_MTP" = "y" ]; then
